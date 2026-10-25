@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
+  <meta name="description" content="GIGATRON: Swarm Frontier - a free, original voxel sandbox in your browser. No ads, no accounts, no tracking.">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; object-src 'none'; base-uri 'self'">
+  <title>GIGATRON: Swarm Frontier</title>
+  <link rel="icon" href="favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <canvas id="game" tabindex="0" aria-label="Game view"></canvas>
+
+  <div id="hud" hidden>
+    <div id="crosshair">+</div>
+    <div id="info"></div>
+    <div id="quest"></div>
+    <div id="target"></div>
+    <div id="toasts" aria-live="polite"></div>
+    <div id="chatlog"></div>
+    <div id="hotbar"></div>
+    <div id="locktip" hidden>Click to look around &middot; H for help &middot; Esc for menu</div>
+  </div>
+
+  <div id="touch" hidden>
+    <div id="stick"><div id="knob"></div></div>
+    <div id="tbtns">
+      <button id="t-break" aria-label="Break">&#x26CF;</button>
+      <button id="t-place" aria-label="Place">&#x25A3;</button>
+      <button id="t-use" aria-label="Use">E</button>
+      <button id="t-cmd" aria-label="Command swarm">Q</button>
+      <button id="t-jump" aria-label="Jump">&#x2191;</button>
+      <button id="t-down" aria-label="Descend">&#x2193;</button>
+      <button id="t-fly" aria-label="Toggle fly">&#x2708;</button>
+    </div>
+    <button id="t-menu" aria-label="Menu">&#x2630;</button>
+    <button id="t-inv" aria-label="Inventory">&#x25A6;</button>
+  </div>
+
+  <section id="start" class="screen">
+    <div class="card wide">
+      <h1>GIGATRON<span>: Swarm Frontier</span></h1>
+      <p class="tag">A free, original voxel sandbox. Build circuits, befriend drone swarms, find the guardian Gigatron.</p>
+      <div class="cols">
+        <div>
+          <h2>New world</h2>
+          <label>Name <input id="new-name" maxlength="40" value="Frontier"></label>
+          <label>Seed <input id="new-seed" maxlength="64" placeholder="random"></label>
+          <label class="check"><input id="new-creative" type="checkbox"> Creative (infinite blocks, flight)</label>
+          <button id="btn-new" class="primary">Create &amp; play</button>
+        </div>
+        <div>
+          <h2>Your worlds</h2>
+          <div id="worlds" class="worlds"><p class="muted">No saved worlds yet.</p></div>
+          <p id="storage-kind" class="muted small"></p>
+        </div>
+      </div>
+      <div class="row">
+        <button data-open="help">How to play</button>
+        <button data-open="mp">Multiplayer (experimental)</button>
+        <button data-open="settings">Settings</button>
+        <button data-open="support">Support</button>
+      </div>
+      <p class="muted small">Free forever: no ads, no accounts, no tracking, no purchases. Inspired by the voxel sandbox genre; not affiliated with any other game.</p>
+    </div>
+  </section>
+
+  <section id="pause" class="screen" hidden>
+    <div class="card">
+      <h2>Paused</h2>
+      <button id="btn-resume" class="primary">Resume</button>
+      <button id="btn-save">Save world</button>
+      <button data-open="inv">Inventory</button>
+      <button data-open="help">Help</button>
+      <button data-open="mp">Multiplayer</button>
+      <button data-open="settings">Settings</button>
+      <button data-open="support">Support</button>
+      <button id="btn-share">Copy seed share link</button>
+      <button id="btn-export">Export world file</button>
+      <button id="btn-quit">Save &amp; quit to title</button>
+      <p id="seed-line" class="muted small"></p>
+    </div>
+  </section>
+
+  <section id="help" class="screen panel" hidden>
+    <div class="card wide scroll">
+      <h2>How to play</h2>
+      <div class="cols">
+        <div>
+          <h3>Desktop</h3>
+          <ul>
+            <li><kbd>Click</kbd> to capture the mouse, <kbd>Esc</kbd> menu</li>
+            <li><kbd>W A S D</kbd> move, <kbd>Space</kbd> jump, <kbd>Ctrl</kbd> sprint</li>
+            <li><kbd>Space</kbd>&times;2 toggle flight (creative), <kbd>Shift</kbd> descend</li>
+            <li><kbd>Left click</kbd> break, <kbd>Right click</kbd> place / toggle switch</li>
+            <li><kbd>1-9</kbd> or wheel select hotbar, <kbd>Middle click</kbd> pick block</li>
+            <li><kbd>E</kbd> interact: switches, hubs, wild drones, Gigatron</li>
+            <li><kbd>Q</kbd> swarm command: near a hub assigns a drone, elsewhere recalls all</li>
+            <li><kbd>I</kbd> inventory, <kbd>H</kbd> help, <kbd>T</kbd> chat (multiplayer), <kbd>F3</kbd> debug</li>
+          </ul>
+          <h3>Mobile</h3>
+          <ul>
+            <li>Left stick moves; drag anywhere else to look</li>
+            <li>Buttons: break, place, E use, Q swarm, jump, descend, fly, menu, inventory</li>
+          </ul>
+        </div>
+        <div>
+          <h3>The frontier</h3>
+          <ul>
+            <li><b>Biomes:</b> Neon Crystal Plains, Data-Stream Rivers, Circuit Canyons and Floating Sky Islands.</li>
+            <li><b>Gigatron Beacon:</b> follow the cyan sky-beam. Press <kbd>E</kbd> near the guardian for lore and quests.</li>
+            <li><b>Swarm drones:</b> deploy a Drone Pod or bond with a wild drone (E, costs 1 Neon Crystal). Followers fetch dropped items for you.</li>
+            <li><b>Hubs &amp; chains:</b> place a Swarm Hub near crystals, press <kbd>Q</kbd> beside it to assign a drone; it harvests crystal within 8 blocks. A newer hub within 24 blocks of an older hub links to it and forwards cargo down the chain. Press <kbd>E</kbd> on any hub to collect.</li>
+            <li><b>Energy grid:</b> Power Node (always on) or Switch &rarr; Power Wire &rarr; Lumen Lamp / Energy Door. Inverter Gate outputs to its sides and top unless the block below it is live. Feed an inverter's output back into its input to make a clock.</li>
+            <li><b>Saving:</b> autosaves every 30 s to this browser. Share your seed to let friends explore the same terrain.</li>
+          </ul>
+        </div>
+      </div>
+      <button class="close primary">Back</button>
+    </div>
+  </section>
+
+  <section id="support" class="screen panel" hidden>
+    <div class="card scroll">
+      <h2>Support</h2>
+      <p>GIGATRON: Swarm Frontier is <b>free to play, forever</b>. There are no ads, no purchases, no accounts, no wallets and no tracking. Nothing in the game is locked behind payment.</p>
+      <p>If you enjoy it and want to help, donations are <b>completely optional</b> and change nothing in the game. Other great ways to help: share it with friends, report bugs, or contribute art, quests and code on GitHub.</p>
+      <p class="todo">Donation link: <b>TODO</b> - not set up yet. The maintainer will add an official link here and in the README. Until then, please do not send money to anyone claiming to collect for this project.</p>
+      <p>Source code &amp; issues: <span class="mono">github.com/1ntern0t/gigatron-voxel</span></p>
+      <button class="close primary">Back</button>
+    </div>
+  </section>
+
+  <section id="mp" class="screen panel" hidden>
+    <div class="card scroll">
+      <h2>Multiplayer <span class="badge">experimental</span></h2>
+      <p class="small">Peer-to-peer over WebRTC using the free public PeerJS signaling server (0.peerjs.com). The host's browser runs the world; up to 8 players. Your IP address is visible to the peers you connect with. No accounts.</p>
+      <label>Your name <input id="mp-name" maxlength="16" value="Builder"></label>
+      <button id="btn-host" class="primary">Host current world</button>
+      <div class="row"><input id="mp-code" maxlength="8" placeholder="ROOM CODE"><button id="btn-join">Join</button></div>
+      <p id="mp-status" class="status">Offline.</p>
+      <button id="btn-leave">Leave session</button>
+      <button class="close">Back</button>
+    </div>
+  </section>
+
+  <section id="settings" class="screen panel" hidden>
+    <div class="card">
+      <h2>Settings</h2>
+      <label>Render distance <input id="set-rd" type="range" min="2" max="12" value="8"> <span id="set-rd-v">8</span> chunks</label>
+      <label>Mouse sensitivity <input id="set-sens" type="range" min="0.2" max="3" step="0.1" value="1"> <span id="set-sens-v">1</span></label>
+      <label>Field of view <input id="set-fov" type="range" min="55" max="100" value="75"> <span id="set-fov-v">75</span></label>
+      <label class="check"><input id="set-sound" type="checkbox" checked> Sound effects</label>
+      <label class="check"><input id="set-fps" type="checkbox" checked> Show FPS / coordinates</label>
+      <button class="close primary">Back</button>
+    </div>
+  </section>
+
+  <section id="inv" class="screen panel" hidden>
+    <div class="card wide">
+      <h2>Inventory</h2>
+      <p class="muted small">Click an item to move it into the selected hotbar slot. Creative mode lists every block.</p>
+      <div id="inv-grid"></div>
+      <button class="close primary">Back</button>
+    </div>
+  </section>
+
+  <section id="dialog" class="screen panel" hidden>
+    <div class="card gigatron">
+      <div class="portrait" aria-hidden="true"><div class="eye"></div><div class="eye"></div><div class="core"></div></div>
+      <h2>GIGATRON</h2>
+      <p id="dlg-lore"></p>
+      <p id="dlg-quest" class="quest"></p>
+      <button class="close primary">Understood</button>
+    </div>
+  </section>
+
+  <section id="chatbox" hidden>
+    <input id="chat-input" maxlength="140" placeholder="Say something (Enter to send, Esc to cancel)">
+  </section>
+
+  <div id="loading" hidden><div class="spinner"></div><p id="loading-text">Generating the frontier...</p></div>
+  <noscript><p class="noscript">This game needs JavaScript and WebGL.</p></noscript>
+  <script type="module" src="src/main.js"></script>
+</body>
+</html>
