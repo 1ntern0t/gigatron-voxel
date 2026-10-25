@@ -116,6 +116,9 @@ npm run test:mp      # two headless browsers host/join through 0.peerjs.com (nee
 
 Set `CHROME_PATH` to point the smoke tests at your Chrome or Chromium binary.
 
+CI: a GitHub Actions workflow that runs unit tests plus the smoke test is staged in
+[`ci/github-actions-ci.yml`](ci/github-actions-ci.yml). See [`ci/README.md`](ci/README.md) for how to enable it.
+
 ## Project layout
 
 ```
@@ -129,6 +132,7 @@ vendor/three/             Three.js r186 (MIT), vendored
 vendor/peerjs/            PeerJS 1.5.5 (MIT), vendored
 test/                     node:test unit tests
 tools/                    static server, headless smoke + multiplayer tests
+ci/                       GitHub Actions workflow (staged, see ci/README.md)
 ```
 
 ## Support the project
