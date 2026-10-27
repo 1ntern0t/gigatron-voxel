@@ -16,15 +16,16 @@ import { Input } from './client/input.js';
 import { openSaveStore, loadSettings, saveSettings } from './client/storage.js';
 import { sfx, setAudioEnabled } from './client/audio.js';
 import { Net } from './client/net.js';
+import { createAchievementState, validateAchievementState, recordStat } from './core/achievements.js';
+import { nextNudge } from './core/onboarding.js';
 import {
-  createLights, createDroneMesh, setDroneTamed, animateDrone, createDropMesh, createAvatar,
+  createLights, createDroneMesh, setDroneTamed, animateDrone, createDropMesh, createAvatar, disposeAvatar,
   createBeaconBeam, createSelectionBox, createLinkLine, createPacket,
 } from './client/entities.js';
 
 const $ = (id) => document.getElementById(id);
 const STACK = 999;
 const PLACE_BLOCKED = new Set([B.AIR, B.FLUID, B.BEDROCK, B.CORE, B.BEACON]);
-const NET_FORBIDDEN = new Set([B.BEDROCK, B.CORE, B.BEACON, B.FLUID]);
 
 function starterInventory() {
   const inv = new Array(INVENTORY_SIZE).fill(null);
@@ -59,6 +60,9 @@ class Game {
     this.selection = createSelectionBox();
     this.scene.add(this.selection);
     this.iconCache = new Map();
+    this.achievements = validateAchievementState(this.settings.achievements);
+    this.lobbyTarget = null;
+    this.lobbyState = { state: 'unknown', text: 'Public Lobby: checking...' };
     this.net = new Net(this);
     this.net.onStatus = (t, kind) => {
       $('mp-status').textContent = t;
@@ -113,14 +117,23 @@ class Game {
     $('btn-share').addEventListener('click', () => this.shareSeed());
     $('btn-export').addEventListener('click', () => this.exportWorld());
     $('btn-host').addEventListener('click', () => this.hostRoom());
+    $('btn-lobby').addEventListener('click', () => this.joinLobby());
+    $('btn-lobby-refresh').addEventListener('click', () => this.probeLobby());
+    $('btn-start-lobby').addEventListener('click', () => this.joinLobby());
+    for (const id of ['start-name', 'mp-name']) {
+      $(id).addEventListener('input', (e) => { for (const o of ['start-name', 'mp-name']) if (o !== id) $(o).value = e.target.value; });
+    }
     $('btn-join').addEventListener('click', () => this.joinRoom());
     $('btn-leave').addEventListener('click', () => {
       this.net.leave();
-      for (const id of [...this.remotes.keys()]) this.removeRemote(id);
+      for (const id of [...(this.remotes?.keys() || [])]) this.removeRemote(id);
       this.isClient = false;
+      this.protect = [];
+      this.onRoster({ cap: 0, players: [] });
       $('mp-status').textContent = 'Offline.';
     });
     $('mp-name').value = this.settings.name;
+    $('start-name').value = this.settings.name;
     const bindRange = (id, key, fmt = (v) => v) => {
       const el = $(id);
       el.value = this.settings[key];
@@ -142,7 +155,7 @@ class Game {
       e.stopPropagation();
       if (e.key === 'Enter') {
         const v = e.target.value.trim();
-        if (v) this.net.sendChat(v);
+        if (v && this.net.sendChat(v)) this.stat('chats');
         e.target.value = '';
         this.closeChat();
       } else if (e.key === 'Escape') this.closeChat();
@@ -176,6 +189,7 @@ class Game {
     if (id === 'mp') {
       $('btn-host').disabled = !this.running || this.isClient;
       $('btn-leave').hidden = !this.net.active;
+      if (!this.net.lobby) this.probeLobby();
     }
     this.updateLockTip();
   }
@@ -221,11 +235,13 @@ class Game {
     while ($('toasts').children.length > 4) $('toasts').firstChild.remove();
   }
 
-  showChat(name, text) {
+  showChat(name, text, { bot = false, sys = false } = {}) {
     const d = document.createElement('div');
-    d.textContent = name + ': ' + text;
+    d.textContent = sys ? text : name + (bot ? ' [BOT]' : '') + ': ' + text;
+    if (bot) d.className = 'bot';
+    if (sys) d.className = 'sys';
     $('chatlog').appendChild(d);
-    while ($('chatlog').children.length > 8) $('chatlog').firstChild.remove();
+    while ($('chatlog').children.length > 10) $('chatlog').firstChild.remove();
     setTimeout(() => d.remove(), 30000);
   }
 
@@ -420,6 +436,10 @@ class Game {
     this.oreClaims = new Set();
     this.remotes = new Map();
     this.timers = { circuit: 0, quest: 0, save: 0, transfer: 0, info: 0, prune: 0 };
+    this.playTime = 0;
+    this.nudgesShown = new Set();
+    this.done = { moved: false, broken: false, placed: false, beacon: false, multiplayer: this.net.active };
+    this.startPos = { ...this.player.pos };
     this.loaded = false;
     this.running = true;
     this.hotbarDirty = true;
@@ -527,14 +547,36 @@ class Game {
     return true;
   }
 
+  // Edits from the host are authoritative (the host validated them; see core/authority.js).
   applyNetEdit(msg) {
     if (!this.world) return false;
-    const cur = this.world.getBlockOrNull(msg.x, msg.y, msg.z);
-    if (this.net.role === 'host') {
-      if (NET_FORBIDDEN.has(msg.id)) return false;
-      if (cur !== null && BLOCKS[cur] && !BLOCKS[cur].breakable && cur !== B.FLUID && cur !== B.AIR) return false;
-    }
     return this.setBlock(msg.x, msg.y, msg.z, msg.id, { fromNet: true }) || true;
+  }
+
+  applyNetEdits(flat) {
+    if (!this.world) return;
+    for (let i = 0; i + 3 < flat.length; i += 4) this.setBlock(flat[i], flat[i + 1], flat[i + 2], flat[i + 3], { fromNet: true });
+  }
+
+  // Client-side mirror of the host's protected regions, so players get instant feedback.
+  protectedAt(x, z) {
+    if (!this.isClient || !this.protect?.length) return null;
+    for (const r of this.protect) if (Math.hypot(x + 0.5 - r.x, z + 0.5 - r.z) <= r.r) return r;
+    return null;
+  }
+
+  stat(name, n = 1) {
+    const r = recordStat(this.achievements, name, n);
+    if (r.state === this.achievements) return;
+    this.achievements = r.state;
+    this.done[name] = true;
+    for (const a of r.unlocked) {
+      this.toast('Achievement unlocked: ' + a.title + ' - ' + a.desc);
+      sfx.quest();
+    }
+    this.settings.achievements = this.achievements;
+    if (r.unlocked.length) saveSettings(this.settings);
+    else clearTimeout(this.achSaveTimer), (this.achSaveTimer = setTimeout(() => saveSettings(this.settings), 2000));
   }
 
   target() {
@@ -551,7 +593,14 @@ class Game {
       this.toast(def.name + ' cannot be broken.');
       return;
     }
+    const region = this.protectedAt(t.x, t.z);
+    if (region) {
+      this.toast('The ' + region.label + ' is protected. Build outside it.');
+      return;
+    }
     this.setBlock(t.x, t.y, t.z, B.AIR);
+    this.stat('broken');
+    this.done.broken = true;
     sfx.break();
     if (!this.creative) this.spawnDrop(t.x + 0.5, t.y + 0.5, t.z + 0.5, def.drop, 1);
   }
@@ -589,7 +638,14 @@ class Game {
     }
     if (PLACE_BLOCKED.has(slot.id)) return;
     if (BLOCKS[slot.id].solid && this.player.overlapsBlock(px, py, pz)) return;
+    const region = this.protectedAt(px, pz);
+    if (region) {
+      this.toast('The ' + region.label + ' is protected. Build outside it.');
+      return;
+    }
     this.setBlock(px, py, pz, slot.id);
+    this.stat('placed');
+    this.done.placed = true;
     if (slot.id === B.HUB) this.addHub(px, py, pz);
     this.consumeSelected();
     sfx.place();
@@ -636,6 +692,7 @@ class Game {
       }
     }
     this.hotbarDirty = true;
+    if (quest && id === B.CRYSTAL) this.stat('crystals', count);
     if (quest) this.questEvent({ type: 'collect', item: id, count });
   }
 
@@ -837,6 +894,7 @@ class Game {
     if (r.completed) {
       sfx.quest();
       this.toast('Quest complete: ' + r.completed.title);
+      if (this.net.active) this.net.sendQuest(this.quests.index - 1);
       for (const [id, n] of r.completed.reward) this.addItem(id, n, { quest: false });
       this.toast('Reward: ' + r.completed.reward.map(([id, n]) => n + 'x ' + itemName(id)).join(', '));
       if (isQuestLineComplete(this.quests)) this.toast('GIGATRON: "The frontier is yours to shape. Thank you."');
@@ -954,6 +1012,83 @@ class Game {
     }
   }
 
+  // ---------- Public lobby ----------
+  // Where the lobby lives: ?lobby=wss://host/ws or ?lobby=peer:<id> overrides; otherwise lobby.json
+  // next to index.html ({"ws": "wss://...", "peer": "<peer id>"} or {"ws": "same-origin"}). With neither
+  // configured the game says the lobby is offline instead of inventing a number.
+  async resolveLobbyTarget() {
+    if (this.lobbyTarget) return this.lobbyTarget;
+    const q = new URLSearchParams(location.search).get('lobby');
+    const valid = (t) => (t?.ws && /^wss?:\/\/[^\s]{1,200}$/.test(t.ws) ? { ws: t.ws } : t?.peer && /^[A-Za-z0-9_-]{3,64}$/.test(t.peer) ? { peer: t.peer } : null);
+    let target = null;
+    if (q) target = valid(q.startsWith('peer:') ? { peer: q.slice(5) } : { ws: q });
+    if (!target) {
+      try {
+        const res = await fetch('lobby.json', { cache: 'no-store' });
+        if (res.ok) {
+          const cfg = await res.json();
+          target = valid({ ws: cfg.ws === 'same-origin' ? location.origin.replace(/^http/, 'ws') + '/ws' : cfg.ws }) || valid({ peer: cfg.peer });
+        }
+      } catch { /* no lobby.json */ }
+    }
+    this.lobbyTarget = target;
+    return target;
+  }
+
+  setLobbyStatus(state, text) {
+    this.lobbyState = { state, text };
+    for (const id of ['lobby-status', 'start-lobby-status']) {
+      const el = $(id);
+      if (!el) continue;
+      el.textContent = text;
+      el.dataset.state = state;
+    }
+    $('btn-start-lobby').disabled = state === 'offline' || state === 'full';
+  }
+
+  async probeLobby() {
+    if (this.probing) return this.probing;
+    this.setLobbyStatus('connecting', 'Public Lobby: connecting...');
+    this.probing = (async () => {
+      try {
+        const target = await this.resolveLobbyTarget();
+        const st = await this.net.probe(target);
+        const full = st.players >= st.cap;
+        this.setLobbyStatus(full ? 'full' : 'online', 'Public Lobby: ' + (full ? 'FULL ' : 'ONLINE ') + st.players + '/' + st.cap + ' players, ' + st.bots + ' bots');
+        this.lobbyLive = st;
+      } catch (err) {
+        this.lobbyLive = null;
+        this.setLobbyStatus('offline', 'Public Lobby: OFFLINE (' + err.message.replace(/\.$/, '') + ')');
+      } finally {
+        this.probing = null;
+      }
+    })();
+    return this.probing;
+  }
+
+  onLobbyResume(token) {
+    if (this.settings.lobbyResume === token) return;
+    this.settings.lobbyResume = token;
+    saveSettings(this.settings);
+  }
+
+  async joinLobby() {
+    this.settings.name = $('mp-name').value;
+    saveSettings(this.settings);
+    if (this.running && !this.isClient) await this.save();
+    this.setLobbyStatus('connecting', 'Public Lobby: joining...');
+    try {
+      await this.net.joinLobby(await this.resolveLobbyTarget(), this.settings.name, this.settings.lobbyResume || null);
+      $('btn-leave').hidden = false;
+      this.stat('lobbyJoins');
+      this.done.multiplayer = true;
+    } catch (err) {
+      $('mp-status').textContent = 'Could not join the public lobby: ' + err.message;
+      this.setLobbyStatus('offline', 'Public Lobby: OFFLINE (' + err.message.replace(/\.$/, '') + ')');
+      this.net.leave();
+    }
+  }
+
   snapshotForNet() {
     const edits = [];
     for (const [ck, m] of this.world.edits) {
@@ -979,18 +1114,32 @@ class Game {
       edits.get(ck).set(localIndex(x - cx * CHUNK, y, z - cz * CHUNK), msg.edits[i + 3]);
     }
     const net = this.net;
+    const survival = msg.mode === 'survival';
     this.startWorld({
-      name: 'Room ' + net.code, seed: msg.seed, seedText: String(msg.seed), creative: true, time: msg.time,
-      player: null, inventory: null, selected: 0, quests: createQuestState(), drones: [], hubs: [], tamed: [], edits,
+      name: msg.lobby ? 'Public Lobby' : 'Room ' + net.code, seed: msg.seed, seedText: String(msg.seed), creative: !survival, time: msg.time,
+      player: msg.spawn, inventory: survival ? starterInventory() : null, selected: 0, quests: createQuestState(), drones: [], hubs: [], tamed: [], edits,
     }, { client: true });
+    this.protect = msg.protect || [];
+    this.done.multiplayer = true;
+    if (msg.motd) this.showChat('SERVER', msg.motd, { sys: true });
   }
 
   updateRemote(msg) {
     if (!this.world) return;
+    const info = msg.info || this.net.info(msg.p);
+    const label = info ? info.name + (info.bot ? ' [BOT]' : '') + (info.title && info.title !== 'security' && info.title !== 'builder' && info.title !== 'guide' ? ' *' + info.title : '') : 'Builder';
+    const color = info?.color ?? 0xc8d2e0;
     let r = this.remotes.get(msg.p);
+    const prev = r;
+    if (r && (r.label !== label || r.color !== color)) {
+      this.entityGroup.remove(r.mesh);
+      disposeAvatar(r.mesh);
+      r = null;
+    }
     if (!r) {
-      r = { mesh: createAvatar(msg.name), target: { x: msg.x, y: msg.y, z: msg.z } };
-      r.mesh.position.set(msg.x, msg.y, msg.z);
+      r = { mesh: createAvatar(label, color), target: { x: msg.x, y: msg.y, z: msg.z }, label, color };
+      const at = prev?.mesh.position || msg;
+      r.mesh.position.set(at.x, at.y, at.z);
       this.entityGroup.add(r.mesh);
       this.remotes.set(msg.p, r);
     }
@@ -1002,13 +1151,57 @@ class Game {
     const r = this.remotes?.get(id);
     if (!r) return;
     this.entityGroup.remove(r.mesh);
+    disposeAvatar(r.mesh);
     this.remotes.delete(id);
   }
 
-  onNetClosed() {
-    for (const id of [...this.remotes.keys()]) this.removeRemote(id);
-    this.toast('Session ended. You can keep playing this world locally; use Save to keep it.');
+  onRoster(roster) {
+    const box = $('roster');
+    const list = $('mp-roster');
+    const humans = roster.players.filter((p) => !p.bot);
+    const bots = roster.players.filter((p) => p.bot);
+    box.hidden = !this.net.active || !roster.players.length;
+    list.textContent = '';
+    box.textContent = '';
+    if (!roster.players.length) return;
+    const head = document.createElement('b');
+    head.textContent = (this.net.lobby ? 'Public Lobby ' : 'Room ') + humans.length + '/' + roster.cap + ' players' + (bots.length ? ', ' + bots.length + ' bots' : '');
+    box.appendChild(head);
+    const sorted = [...humans].sort((a, b) => b.score - a.score || a.name.localeCompare(b.name));
+    for (const p of [...sorted, ...bots]) {
+      const row = document.createElement('div');
+      row.style.color = '#' + p.color.toString(16).padStart(6, '0');
+      row.textContent = (p.p === this.net.myId ? '> ' : '') + p.name + (p.bot ? ' [BOT] ' + p.title : (p.title ? ' *' + p.title : '') + ' - ' + p.score + ' pts');
+      if (sorted.indexOf(p) < 6 || p.bot) box.appendChild(row);
+      list.appendChild(row.cloneNode(true));
+    }
+    const me = roster.players.find((p) => p.p === this.net.myId);
+    if (me?.title === 'Crystal Champ' && !this.wasChamp) this.stat('rushWins');
+    this.wasChamp = me?.title === 'Crystal Champ';
+    for (const p of roster.players) if (this.remotes?.has(p.p)) this.updateRemote({ p: p.p, ...this.remotes.get(p.p).target, yaw: this.remotes.get(p.p).yaw, info: p });
+  }
+
+  onNetDeny(reason) {
+    this.toast(reason);
+  }
+
+  onNetPos(msg) {
+    if (!this.player) return;
+    Object.assign(this.player.pos, { x: msg.x, y: msg.y, z: msg.z });
+    this.player.vel.x = this.player.vel.y = this.player.vel.z = 0;
+  }
+
+  onNetEvent(msg) {
+    this.toast(msg.text);
+    sfx.quest();
+  }
+
+  onNetClosed(reason) {
+    for (const id of [...(this.remotes?.keys() || [])]) this.removeRemote(id);
+    this.toast((reason ? reason + ' ' : '') + 'Session ended. You can keep playing this world locally; use Save to keep it.');
     this.isClient = false;
+    this.protect = [];
+    this.onRoster({ cap: 0, players: [] });
   }
 
   // ---------- Main loop ----------
@@ -1049,7 +1242,7 @@ class Game {
         $('loading').hidden = true;
         // Make sure we are not inside terrain.
         while (p.collides(p.pos.x, p.pos.y, p.pos.z) && p.pos.y < HEIGHT) p.pos.y += 1;
-        this.toast(this.isClient ? 'Connected. Creative building enabled in shared rooms.' : 'Welcome to the frontier. Follow the cyan beam to find Gigatron.');
+        this.toast(this.isClient ? (this.creative ? 'Connected. Creative building enabled in shared rooms.' : 'Connected to the public lobby. Say hi with T!') : 'Welcome to the frontier. Follow the cyan beam to find Gigatron.');
       }
     }
 
@@ -1100,6 +1293,13 @@ class Game {
       this.timers.quest += dt;
       if (this.timers.quest >= 1) {
         this.timers.quest = 0;
+        this.playTime += 1;
+        if (!this.done.moved && Math.hypot(p.pos.x - this.startPos.x, p.pos.z - this.startPos.z) > 3) this.done.moved = true;
+        if (this.nearBeacon(30)) this.done.beacon = true;
+        if (this.playTime <= 90) {
+          const n = nextNudge(this.playTime, this.done, this.nudgesShown);
+          if (n) this.toast(n.text);
+        }
         if (this.nearBeacon(14)) this.questEvent({ type: 'reach_beacon' });
         this.questEvent({ type: 'drones', count: this.drones.length });
         this.questEvent({ type: 'chain', length: longestChain(this.links) });
@@ -1141,7 +1341,10 @@ class Game {
     const changes = this.circuit.step((x, y, z) => this.world.getBlockOrNull(x, y, z));
     for (const c of changes) {
       this.setBlock(c.x, c.y, c.z, c.id);
-      if (c.id === B.LAMP_ON) this.questEvent({ type: 'lamp' });
+      if (c.id === B.LAMP_ON) {
+        this.questEvent({ type: 'lamp' });
+        this.stat('lamps');
+      }
     }
   }
 
@@ -1257,7 +1460,7 @@ class Game {
       'Grid time ' + String(hh).padStart(2, '0') + ':' + String(mm).padStart(2, '0') + (ds.day < 0.3 ? '  (aurora)' : ''),
       'Swarm: ' + this.drones.length + ' drones (' + this.drones.filter((d) => d.mode === 'work').length + ' working), hubs ' + this.hubs.size,
       'Beacon ' + Math.round(Math.hypot(this.gen.beacon.x - p.x, this.gen.beacon.z - p.z)) + ' m',
-      (this.creative ? 'Creative' : 'Survival-lite') + (this.player.flying ? ' / flying' : '') + (this.net.active ? '  |  ' + this.net.role + ' ' + this.net.code + ' (' + this.net.playerCount + ' players)' : ''),
+      (this.creative ? 'Creative' : 'Survival-lite') + (this.player.flying ? ' / flying' : '') + (this.net.active ? '  |  ' + (this.net.lobby ? 'public lobby' : this.net.role + ' ' + this.net.code) + ' (' + this.net.playerCount + ' players' + (this.net.botCount ? ', ' + this.net.botCount + ' bots' : '') + ')' : ''),
     ];
     if (this.debug) lines.push('chunks ' + this.world.chunks.size + ' meshed ' + this.world.meshedCount + ' circuits ' + this.circuit.size + ' draw ' + this.renderer.info.render.calls + ' tris ' + this.renderer.info.render.triangles);
     $('info').textContent = lines.join('\n');
@@ -1277,9 +1480,12 @@ window.__gigatron = {
       chunks: game.world?.chunks.size ?? 0, meshed: game.world?.meshedCount ?? 0,
       drones: game.drones?.length ?? 0, quest: game.quests?.index ?? 0,
       triangles: game.renderer.info.render.triangles, net: game.net.role, room: game.net.code,
-      remotes: game.remotes?.size ?? 0,
+      remotes: game.remotes?.size ?? 0, lobby: game.lobbyState, roster: game.net.roster,
+      achievements: game.achievements.unlocked.slice(),
     };
   },
   game,
 };
 if (!new URLSearchParams(location.search).get('autostart')) game.openScreen('start');
+// Show the public lobby's live status on the title screen (a real connection attempt, never a guess).
+if (new URLSearchParams(location.search).get('noprobe') !== '1') game.probeLobby();

@@ -89,3 +89,19 @@ kbd { background: #102030; border: 1px solid var(--line); border-radius: 4px; pa
 #t-menu { position: absolute; left: 50%; top: 10px; transform: translateX(-50%); width: 46px; height: 46px; }
 #t-inv { position: absolute; left: calc(50% + 56px); top: 10px; width: 46px; height: 46px; }
 @media (pointer: coarse) { .slot { width: 40px; height: 40px; } #info { display: none; } }
+
+#roster { position: absolute; left: 10px; top: 112px; width: min(260px, 40vw); font-size: 12px; background: rgba(0, 10, 20, 0.55); border: 1px solid var(--line); padding: 6px 8px; border-radius: 8px; }
+#roster b { color: var(--cyan); display: block; margin-bottom: 2px; }
+#roster div, .mp-roster div { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.mp-roster { font-size: 13px; max-height: 160px; overflow-y: auto; }
+#chatlog div.bot { border-left: 3px solid #ffb020; }
+#chatlog div.sys { color: #9fe; font-style: italic; }
+.lobbybar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 8px 0; padding: 8px; border: 1px solid var(--line); border-radius: 8px; }
+.lobbybar button { width: auto; margin: 0; }
+.lobbybar input { width: 9em; margin: 0; }
+.lobbybox { border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px; margin: 8px 0; }
+.lobby-status { font-size: 13px; flex: 1; }
+.lobby-status[data-state="online"] { color: #6f6; }
+.lobby-status[data-state="full"] { color: #fb0; }
+.lobby-status[data-state="offline"] { color: #f88; }
+.lobby-status[data-state="connecting"], .lobby-status[data-state="unknown"] { color: #9fe; }
