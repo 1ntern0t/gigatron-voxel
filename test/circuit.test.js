@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { CircuitSim, toggleSwitch, isCircuitBlock } from '../src/core/circuit.js';
 import { B } from '../src/core/blocks.js';
+import { createQuestState, applyQuestEvent, currentQuest } from '../src/core/quests.js';
 
 function makeWorld() {
   const m = new Map();
@@ -132,4 +133,29 @@ test('removed blocks are untracked and unloaded cells are skipped', () => {
   assert.deepEqual(sim.step(() => null), []);
   assert.equal(sim.size, 1);
   assert.ok(isCircuitBlock(B.WIRE) && !isCircuitBlock(B.STONE));
+});
+
+test('hasLitLamp reports a lamp lit before the First Light quest was active', () => {
+  const w = makeWorld();
+  w.set(0, 0, 0, B.NODE);
+  w.set(1, 0, 0, B.WIRE);
+  w.set(2, 0, 0, B.LAMP_OFF);
+  const get = (x, y, z) => w.get(x, y, z);
+  assert.equal(w.sim.hasLitLamp(get), false);
+  w.tick(2);
+  assert.equal(w.sim.hasLitLamp(get), true);
+  // The lamp is now steady: no further LAMP_ON changes are emitted.
+  assert.equal(w.tick(3).length, 0);
+  // Advance the quest line to "First Light" (quests 1 and 2), as a player who lit the lamp early would.
+  let s = createQuestState();
+  s = applyQuestEvent(s, { type: 'reach_beacon' }).state;
+  s = applyQuestEvent(s, { type: 'drones', count: 2 }).state;
+  assert.equal(currentQuest(s).type, 'lamp');
+  // The polled check in the game loop turns the steady state into a quest event.
+  const r = applyQuestEvent(s, w.sim.hasLitLamp(get) ? { type: 'lamp' } : null);
+  assert.equal(r.completed?.id, 'light');
+  // Turning the power off clears it.
+  w.set(0, 0, 0, B.AIR);
+  w.tick(2);
+  assert.equal(w.sim.hasLitLamp(get), false);
 });

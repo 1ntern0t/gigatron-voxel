@@ -1,17 +1,21 @@
 // Headless browser smoke test: loads the game, checks for console errors, captures screenshots.
-// Usage: node tools/smoke.mjs [url]   (CHROME_PATH env var overrides the browser binary)
+// Usage: node tools/smoke.mjs [url] [--update-screenshots]   (CHROME_PATH overrides the browser binary)
+// Screenshots go to artifacts/ (git-ignored) so a test run never rewrites the committed
+// docs images. Pass --update-screenshots to refresh docs/screenshot-*.png on purpose.
 import { chromium } from 'playwright-core';
 import { startServer } from './serve.mjs';
 import { mkdir } from 'node:fs/promises';
 
 const port = 8765;
+const args = process.argv.slice(2);
+const updateDocs = args.includes('--update-screenshots');
 let server = null;
-let base = process.argv[2];
+let base = args.find((a) => !a.startsWith('--'));
 if (!base) {
   server = await startServer(port);
   base = `http://localhost:${port}/`;
 }
-const outDir = new URL('../docs/', import.meta.url).pathname;
+const outDir = new URL(updateDocs ? '../docs/' : '../artifacts/', import.meta.url).pathname;
 await mkdir(outDir, { recursive: true });
 
 const browser = await chromium.launch({
@@ -76,6 +80,15 @@ const circuit = await page.evaluate(async () => {
   return { lamp: g.world.getBlock(x + 2, y, z), wire: g.world.getBlock(x + 1, y, z) };
 });
 
+// "First Light" must also complete for a lamp that was already lit before the quest was active.
+// Rewind the quest line to that quest while the lamp above stays lit, and let the 1 s quest poll run.
+const lateLamp = await page.evaluate(async () => {
+  const g = window.__gigatron.game;
+  g.quests = { index: 2, progress: 0, done: ['signal', 'swarm'] };
+  await new Promise((r) => setTimeout(r, 1800));
+  return g.quests.index;
+});
+
 // Night shot to show the aurora sky and glowing blocks.
 await page.evaluate(() => {
   const g = window.__gigatron.game;
@@ -96,9 +109,9 @@ const saved = await page.evaluate(async () => {
   return { name: back?.name, edits: back ? [...back.edits.values()].reduce((n, m) => n + m.size, 0) : 0 };
 });
 
-console.log(JSON.stringify({ walked, stats, quest, circuit, saved, errors, external }, null, 2));
+console.log(JSON.stringify({ walked, stats, quest, circuit, lateLamp, saved, errors, external }, null, 2));
 await browser.close();
 server?.close();
-const ok = errors.length === 0 && external.length === 0 && stats.loaded && stats.meshed > 0 && quest >= 2 && circuit.lamp === 21 && saved.edits >= 3;
+const ok = errors.length === 0 && external.length === 0 && stats.loaded && stats.meshed > 0 && quest >= 2 && circuit.lamp === 21 && lateLamp >= 3 && saved.edits >= 3;
 console.log(ok ? 'SMOKE OK' : 'SMOKE FAILED');
 process.exit(ok ? 0 : 1);

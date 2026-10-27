@@ -22,6 +22,6 @@ self.onmessage = (e) => {
       self.postMessage({ type: 'mesh', job: msg.job, cx: msg.cx, cz: msg.cz, version: msg.version, mesh: m, vol: msg.vol }, [...transfer, msg.vol.buffer]);
     }
   } catch (err) {
-    self.postMessage({ type: 'error', job: msg.job, message: String(err && err.message || err) });
+    self.postMessage({ type: 'error', kind: msg.type, job: msg.job, cx: msg.cx, cz: msg.cz, message: String(err && err.message || err) });
   }
 };

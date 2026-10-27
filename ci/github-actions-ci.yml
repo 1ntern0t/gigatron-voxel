@@ -26,4 +26,4 @@ jobs:
         if: always()
         with:
           name: screenshots
-          path: docs/*.png
+          path: artifacts/*.png

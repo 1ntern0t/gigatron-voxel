@@ -4,6 +4,7 @@ import { CHUNK, HEIGHT, chunkKey, localIndex } from '../core/constants.js';
 import { B, SOLID } from '../core/blocks.js';
 import { createWorldGen } from '../core/worldgen.js';
 import { buildPaddedVolume, meshVolume, PAD } from '../core/mesher.js';
+import { raycastVoxels } from '../core/raycast.js';
 
 class WorkerPool {
   constructor(count, onMessage) {
@@ -259,7 +260,18 @@ export class ChunkWorld {
       }
       this.onMeshed(c, m.version, m.mesh);
     } else if (m.type === 'error') {
-      console.error('worker job failed', m.message);
+      console.error('worker job failed', m.kind, m.cx, m.cz, m.message);
+      const c = this.chunks.get(chunkKey(m.cx, m.cz));
+      if (!c) return;
+      if (m.kind === 'gen' && !c.data) {
+        // Drop the placeholder so update() requests this chunk again instead of waiting forever.
+        this.chunks.delete(chunkKey(m.cx, m.cz));
+      } else if (m.kind === 'mesh') {
+        c.meshing = false;
+        c.meshFailures = (c.meshFailures || 0) + 1;
+        // Retry a couple of times, then leave the chunk alone rather than loop on a bad volume.
+        if (c.meshFailures < 3) c.dirty = true;
+      }
     }
   }
 
@@ -303,34 +315,7 @@ export class ChunkWorld {
 
   // Voxel DDA raycast. Returns {x,y,z, nx,ny,nz, id} or null.
   raycast(origin, dir, maxDist = 8, pick = (id) => id !== B.AIR && id !== B.FLUID) {
-    let x = Math.floor(origin.x);
-    let y = Math.floor(origin.y);
-    let z = Math.floor(origin.z);
-    const stepX = dir.x > 0 ? 1 : -1;
-    const stepY = dir.y > 0 ? 1 : -1;
-    const stepZ = dir.z > 0 ? 1 : -1;
-    const tDeltaX = Math.abs(1 / dir.x);
-    const tDeltaY = Math.abs(1 / dir.y);
-    const tDeltaZ = Math.abs(1 / dir.z);
-    let tMaxX = (dir.x > 0 ? x + 1 - origin.x : origin.x - x) * tDeltaX;
-    let tMaxY = (dir.y > 0 ? y + 1 - origin.y : origin.y - y) * tDeltaY;
-    let tMaxZ = (dir.z > 0 ? z + 1 - origin.z : origin.z - z) * tDeltaZ;
-    let nx = 0;
-    let ny = 0;
-    let nz = 0;
-    let t = 0;
-    while (t <= maxDist) {
-      const id = this.getBlock(x, y, z);
-      if (pick(id)) return { x, y, z, nx, ny, nz, id };
-      if (tMaxX < tMaxY && tMaxX < tMaxZ) {
-        x += stepX; t = tMaxX; tMaxX += tDeltaX; nx = -stepX; ny = 0; nz = 0;
-      } else if (tMaxY < tMaxZ) {
-        y += stepY; t = tMaxY; tMaxY += tDeltaY; nx = 0; ny = -stepY; nz = 0;
-      } else {
-        z += stepZ; t = tMaxZ; tMaxZ += tDeltaZ; nx = 0; ny = 0; nz = -stepZ;
-      }
-    }
-    return null;
+    return raycastVoxels((x, y, z) => this.getBlock(x, y, z), origin, dir, maxDist, pick);
   }
 
   // Count of chunks with meshes, for HUD/debug.
