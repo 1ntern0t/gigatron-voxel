@@ -1103,6 +1103,10 @@ class Game {
         if (this.nearBeacon(14)) this.questEvent({ type: 'reach_beacon' });
         this.questEvent({ type: 'drones', count: this.drones.length });
         this.questEvent({ type: 'chain', length: longestChain(this.links) });
+        // Lamps lit before "First Light" was active never fire a new LAMP_ON change, so poll.
+        if (currentQuest(this.quests)?.type === 'lamp' && this.circuit.hasLitLamp((x, y, z) => this.world.getBlockOrNull(x, y, z))) {
+          this.questEvent({ type: 'lamp' });
+        }
       }
       this.timers.save += dt;
       if (this.timers.save >= 30) {

@@ -142,3 +142,8 @@ test('rate limiter allows a burst then throttles', () => {
   assert.equal(allow(now), false);
   assert.ok(allow(now + 200));
 });
+
+test('chat text drops Unicode bidi override characters', () => {
+  assert.equal(sanitizeText('hi \u202Egnp.exe\u202C there\u2066x\u2069'), 'hi gnp.exe therex');
+  assert.equal(sanitizeText('plain ünïcode ok'), 'plain ünïcode ok');
+});

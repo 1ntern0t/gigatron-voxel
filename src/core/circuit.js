@@ -48,6 +48,13 @@ export class CircuitSim {
     this.nodes.clear();
   }
 
+  // True when any tracked lamp is currently lit. Used to credit the "First Light" quest
+  // for lamps that were already lit before that quest became active.
+  hasLitLamp(getBlock) {
+    for (const p of this.nodes.values()) if (getBlock(p[0], p[1], p[2]) === B.LAMP_ON) return true;
+    return false;
+  }
+
   // getBlock returns an id, or null when the position is not loaded (skipped this tick).
   step(getBlock) {
     const cells = new Map();

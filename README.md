@@ -111,6 +111,7 @@ npm test             # Node unit tests: world gen, meshing/lighting, circuits, s
                      # swarm logic, protocol validation, multiplayer session logic (fake PeerJS)
 npm run smoke        # headless Chrome: loads the game, plays briefly, checks for console errors,
                      # verifies a circuit lights a lamp, quest progress, IndexedDB save, screenshots
+                     # (written to artifacts/; add -- --update-screenshots to refresh docs/*.png)
 npm run test:mp      # two headless browsers host/join through 0.peerjs.com (needs internet + WebRTC)
 ```
 
@@ -126,7 +127,7 @@ index.html, styles.css    UI shell (all screens), strict CSP
 src/main.js               game loop, UI, gameplay rules
 src/worker.js             worker: chunk generation + meshing
 src/core/                 pure, testable logic (no DOM)
-  worldgen.js noise.js rng.js blocks.js mesher.js circuit.js swarm.js quests.js save.js protocol.js
+  worldgen.js noise.js rng.js blocks.js mesher.js circuit.js swarm.js quests.js save.js protocol.js raycast.js
 src/client/               browser-side: rendering, input, audio, storage, networking
 vendor/three/             Three.js r186 (MIT), vendored
 vendor/peerjs/            PeerJS 1.5.5 (MIT), vendored

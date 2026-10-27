@@ -67,13 +67,32 @@ export function computeLight(vol) {
     push(n);
   };
 
+  // Sky columns: every cell above the first opaque block gets full sky light.
+  // top[col] is the y of that first opaque block (-1 when the column is open to bedrock).
+  const top = new Int16Array(PX * PX);
   for (let col = 0; col < PX * PX; col++) {
     const base = col * HEIGHT;
-    for (let y = HEIGHT - 1; y >= 0; y--) {
+    let y = HEIGHT - 1;
+    for (; y >= 0; y--) {
       const i = base + y;
       if (OPAQUE[vol[i]]) break;
       sky[i] = 15;
-      push(i);
+    }
+    top[col] = y;
+  }
+  // Only seed the flood from sky cells that can actually spread light: a cell whose
+  // horizontal neighbours are all full-sky (or opaque) changes nothing, so it is skipped.
+  // This gives the same result as seeding every sky cell, with far fewer queue entries.
+  for (let pz = 0; pz < PX; pz++) {
+    for (let px = 0; px < PX; px++) {
+      const col = px + PX * pz;
+      let reach = -1;
+      if (px > 0) reach = Math.max(reach, top[col - 1]);
+      if (px < PX - 1) reach = Math.max(reach, top[col + 1]);
+      if (pz > 0) reach = Math.max(reach, top[col - PX]);
+      if (pz < PX - 1) reach = Math.max(reach, top[col + PX]);
+      const base = col * HEIGHT;
+      for (let y = top[col] + 1; y < reach; y++) push(base + y);
     }
   }
   flood(sky);

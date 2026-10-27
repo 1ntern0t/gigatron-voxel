@@ -31,8 +31,9 @@ export function sanitizeName(name) {
 }
 
 export function sanitizeText(text, max = 140) {
-  // Strip control characters; rendering always uses textContent (never innerHTML).
-  return String(text ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, '').slice(0, max);
+  // Strip control characters and Unicode bidi overrides (which can make a chat line read
+  // backwards or spoof another player's name); rendering always uses textContent (never innerHTML).
+  return String(text ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u200e\u200f\u202a-\u202e\u2066-\u2069]/g, '').slice(0, max);
 }
 
 const isInt = (v) => Number.isInteger(v) && Math.abs(v) <= MAX_COORD;
