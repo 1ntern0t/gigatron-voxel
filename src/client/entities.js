@@ -62,37 +62,50 @@ export function createDropMesh(atlasTexture, item) {
   return new THREE.Mesh(g, mat);
 }
 
-export function createAvatar(name) {
+// Remote player avatar: chrome body tinted with the player's color plus a colored name tag.
+export function createAvatar(name, color = 0xc8d2e0) {
   const g = new THREE.Group();
-  const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.35), chrome);
+  const tint = new THREE.MeshLambertMaterial({ color, emissive: new THREE.Color(color).multiplyScalar(0.15) });
+  const glow = new THREE.MeshBasicMaterial({ color });
+  const body = new THREE.Mesh(new THREE.BoxGeometry(0.6, 0.9, 0.35), tint);
   body.position.y = 0.95;
   const legs = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.5, 0.3), black);
   legs.position.y = 0.25;
   const head = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.4, 0.4), black);
   head.position.y = 1.6;
-  const eye = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.02), cyan);
+  const eye = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.08, 0.02), glow);
   eye.position.set(0, 1.62, -0.21);
   const core = new THREE.Mesh(new THREE.BoxGeometry(0.16, 0.16, 0.02), cyan);
   core.position.set(0, 1.05, -0.18);
   g.add(body, legs, head, eye, core);
-  g.add(makeLabel(name));
+  g.add(makeLabel(name, color));
   return g;
 }
 
-export function makeLabel(text) {
+export function disposeAvatar(g) {
+  g.traverse((o) => {
+    o.geometry?.dispose();
+    if (o.material && o.material !== chrome && o.material !== black && o.material !== cyan) {
+      o.material.map?.dispose();
+      o.material.dispose();
+    }
+  });
+}
+
+export function makeLabel(text, color = 0x7ff6ff) {
   const c = document.createElement('canvas');
-  c.width = 256;
+  c.width = 384;
   c.height = 64;
   const ctx = c.getContext('2d');
   ctx.fillStyle = 'rgba(0,10,20,0.6)';
-  ctx.fillRect(0, 8, 256, 48);
-  ctx.fillStyle = '#7ff6ff';
-  ctx.font = 'bold 30px monospace';
+  ctx.fillRect(0, 8, 384, 48);
+  ctx.fillStyle = '#' + (color & 0xffffff).toString(16).padStart(6, '0');
+  ctx.font = 'bold 28px monospace';
   ctx.textAlign = 'center';
-  ctx.fillText(text, 128, 42);
+  ctx.fillText(String(text).slice(0, 26), 192, 42);
   const tex = new THREE.CanvasTexture(c);
   const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: tex, depthTest: false }));
-  s.scale.set(1.6, 0.4, 1);
+  s.scale.set(2.4, 0.4, 1);
   s.position.y = 2.2;
   return s;
 }

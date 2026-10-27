@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { QUESTS, createQuestState, applyQuestEvent, currentQuest, isQuestLineComplete } from '../src/core/quests.js';
 import { computeHubLinks, longestChain, transferStep, createDrone, updateDrone, LINK_RANGE } from '../src/core/swarm.js';
-import { validateMessage, normalizeRoomCode, makeRoomCode, sanitizeText, createRateLimiter, PROTOCOL_VERSION } from '../src/core/protocol.js';
+import { validateMessage, validateHostMessage, normalizeRoomCode, makeRoomCode, sanitizeText, createRateLimiter, PROTOCOL_VERSION } from '../src/core/protocol.js';
 import { B } from '../src/core/blocks.js';
 
 test('quest line has 5 quests and advances in order', () => {
@@ -117,9 +117,13 @@ test('protocol validates and sanitises messages from untrusted peers', () => {
   assert.equal(validateMessage({ t: 'edit', x: 1, y: 5, z: 1, id: 255 }), null);
   assert.deepEqual(validateMessage({ t: 'edit', x: 1, y: 5, z: -1, id: 2, extra: 'x' }), { t: 'edit', x: 1, y: 5, z: -1, id: 2 });
   assert.equal(validateMessage({ t: 'state', x: NaN, y: 0, z: 0, yaw: 0, pitch: 0 }), null);
+  // Clients never choose the displayed name in chat (the host attaches it); extra fields are dropped.
   const chat = validateMessage({ t: 'chat', name: '<img src=x>', text: 'hi\u0000there' + 'x'.repeat(500) });
-  assert.equal(chat.name, 'img srcx');
+  assert.equal(chat.name, undefined);
   assert.ok(!chat.text.includes('\u0000') && chat.text.length === 140);
+  // Names relayed by a host are still sanitised on the receiving side.
+  const relayed = validateHostMessage({ t: 'chat', p: 'p1', name: '<img src=x>', text: 'hi' });
+  assert.equal(relayed.name, 'img srcx');
   assert.equal(validateMessage({ t: 'hello', v: PROTOCOL_VERSION + 1, name: 'a' }), null);
   assert.equal(validateMessage({ t: 'welcome', v: PROTOCOL_VERSION, seed: 5, edits: [1, 2, 3] }), null);
   assert.ok(validateMessage({ t: 'welcome', v: PROTOCOL_VERSION, seed: 5, edits: [1, 2, 3, 4] }));

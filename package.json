@@ -9,12 +9,19 @@
     "test": "node --test test/",
     "serve": "node tools/serve.mjs",
     "smoke": "node tools/smoke.mjs",
-    "test:mp": "node tools/mp-test.mjs"
+    "test:mp": "node tools/mp-test.mjs",
+    "lobby": "node tools/lobby-host.mjs --static",
+    "lobby:supervise": "tools/lobby-supervise.sh --static",
+    "lobby:health": "node tools/lobby-health.mjs",
+    "test:load": "node tools/lobby-load.mjs"
   },
   "engines": {
     "node": ">=20"
   },
   "devDependencies": {
     "playwright-core": "^1.56.0"
+  },
+  "dependencies": {
+    "ws": "^8.22.0"
   }
 }

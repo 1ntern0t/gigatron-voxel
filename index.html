@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
   <meta name="description" content="GIGATRON: Swarm Frontier - a free, original voxel sandbox in your browser. No ads, no accounts, no tracking.">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com; object-src 'none'; base-uri 'self'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; worker-src 'self' blob:; connect-src 'self' https://0.peerjs.com wss://0.peerjs.com wss: ws://localhost:* ws://127.0.0.1:*; object-src 'none'; base-uri 'self'">
   <title>GIGATRON: Swarm Frontier</title>
   <link rel="icon" href="favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="styles.css">
@@ -16,6 +16,7 @@
     <div id="crosshair">+</div>
     <div id="info"></div>
     <div id="quest"></div>
+    <div id="roster" hidden></div>
     <div id="target"></div>
     <div id="toasts" aria-live="polite"></div>
     <div id="chatlog"></div>
@@ -56,9 +57,14 @@
           <p id="storage-kind" class="muted small"></p>
         </div>
       </div>
+      <div class="lobbybar">
+        <span id="start-lobby-status" class="lobby-status" data-state="unknown">Public Lobby: checking...</span>
+        <input id="start-name" maxlength="16" value="Builder" aria-label="Your name">
+        <button id="btn-start-lobby" class="primary" disabled>Join Public Lobby</button>
+      </div>
       <div class="row">
         <button data-open="help">How to play</button>
-        <button data-open="mp">Multiplayer (experimental)</button>
+        <button data-open="mp">Multiplayer</button>
         <button data-open="settings">Settings</button>
         <button data-open="support">Support</button>
       </div>
@@ -134,12 +140,20 @@
 
   <section id="mp" class="screen panel" hidden>
     <div class="card scroll">
-      <h2>Multiplayer <span class="badge">experimental</span></h2>
-      <p class="small">Peer-to-peer over WebRTC using the free public PeerJS signaling server (0.peerjs.com). The host's browser runs the world; up to 8 players. Your IP address is visible to the peers you connect with. No accounts.</p>
+      <h2>Multiplayer</h2>
       <label>Your name <input id="mp-name" maxlength="16" value="Builder"></label>
-      <button id="btn-host" class="primary">Host current world</button>
+      <div class="lobbybox">
+        <h3>Public Lobby</h3>
+        <p class="small muted">One shared survival world with three helper bots: WARDEN keeps it fair, SPARK builds, HIVE runs Crystal Rush events. Online only while its host machine is running; the count below is a live check, not a guess.</p>
+        <p id="lobby-status" class="lobby-status" data-state="unknown">Public Lobby: checking...</p>
+        <div class="row"><button id="btn-lobby" class="primary">Join Public Lobby</button><button id="btn-lobby-refresh">Refresh</button></div>
+      </div>
+      <h3>Private room <span class="badge">peer-to-peer</span></h3>
+      <p class="small">Over WebRTC using the free public PeerJS signaling server (0.peerjs.com). Your browser hosts your current world for up to 8 players. Some networks (strict NAT, corporate firewalls) block peer-to-peer; your IP address is visible to the peers you connect with. No accounts.</p>
+      <button id="btn-host">Host current world</button>
       <div class="row"><input id="mp-code" maxlength="8" placeholder="ROOM CODE"><button id="btn-join">Join</button></div>
       <p id="mp-status" class="status">Offline.</p>
+      <div id="mp-roster" class="mp-roster"></div>
       <button id="btn-leave">Leave session</button>
       <button class="close">Back</button>
     </div>
