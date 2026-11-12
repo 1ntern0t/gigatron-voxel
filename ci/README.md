@@ -1,11 +1,7 @@
-# CI workflow (staged)
+# CI
 
-`github-actions-ci.yml` runs the unit tests and the headless browser smoke test on every push and pull request.
-It lives here instead of `.github/workflows/` because the token used to publish this repo didn't have
-GitHub's `workflow` scope. To turn it on:
+GitHub Actions runs [`.github/workflows/ci.yml`](../.github/workflows/ci.yml) on pushes to `main` and on pull requests. The job installs dependencies with `npm ci`, runs the Node unit tests, runs the headless Chrome smoke test, and uploads screenshots from `artifacts/`.
 
-```bash
-gh auth refresh -s workflow
-mkdir -p .github/workflows && git mv ci/github-actions-ci.yml .github/workflows/ci.yml
-git commit -m "Enable CI" && git push
-```
+The workflow used to live at `ci/github-actions-ci.yml`. Actions never loaded that path, and the token that published the repo lacked the `workflow` scope, so CI did not run until the file was moved.
+
+`actions/checkout` and `actions/setup-node` are pinned to v5, and `actions/upload-artifact` to v6. The previous majors run on Node 20, which GitHub-hosted runners removed on 2026-09-23. v5, v5, and v6 are the oldest majors that declare Node 24. The test commands are unchanged.
